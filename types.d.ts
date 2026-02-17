@@ -1,17 +1,14 @@
-import NextAuth from 'next-auth'
-import {req} from 'next-auth'
- interface User {
-    id: string
- }
+import { DefaultSession } from "next-auth";
 
 declare module "next-auth" {
-    interface Session {
-        discordUser: User
-    }
-    interface NextRequestWithAuth {
+  interface Session {
+    accessToken?: string;
+    user: DefaultSession["user"] & { id: string };
+  }
+}
 
-        nextauth: {
-            discordUser: User
-        }
-    }
+declare module "next-auth/jwt" {
+  interface JWT {
+    accessToken?: string;
+  }
 }

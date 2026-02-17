@@ -1,135 +1,42 @@
-import {
-    ApplicationCommandRegistry,
-    Args, ChatInputCommandContext,
-    Command,
-    CommandOptionsRunTypeEnum,
-    MessageCommandContext
-} from "@sapphire/framework";
-import {
-    ActionRow,
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonComponent,
-    ChatInputCommandInteraction,
-    ComponentBuilder,
-    Embed,
-    EmbedBuilder,
-    Interaction,
-    PermissionOverwrites,
-    PermissionsBitField
-} from "discord.js";
-import {prisma} from "../../../src/lib/prisma";
-import {Subcommand} from "@sapphire/plugin-subcommands";
-import { client } from "../../bot";
+import { ApplicationCommandRegistry, ChatInputCommand, Command } from "@sapphire/framework";
+import { ChannelType, PermissionFlagsBits } from "discord.js";
+import { prisma } from "../../../src/lib/prisma";
 
-export class SetUpCommand extends Subcommand {
-    public constructor(context: Command.LoaderContext, options: Command.Options) {
-        super(context, {
-            ...options,
-            subcommands: [
-                {
-                    name: 'update-settings',
-                    type: 'group',
-                    entries: [
-                        {
-                            name: 'update-support-role',
-                            chatInputRun: 'updateRole',
-                        },
-                        {
-                            name: 'update-log-channel',
-                            chatInputRun: 'updateLogChannel',
-                        }
-                    ]
-                }
-            ]
-        });
-    }
+export class UpdateSettingsCommand extends Command {
+  public override registerApplicationCommands(registry: ApplicationCommandRegistry) {
+    registry.registerChatInputCommand((builder) =>
+      builder
+        .setName("update-settings")
+        .setDescription("Update Tickettr guild settings")
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+        .addRoleOption((option) => option.setName("support-role").setDescription("Support role").setRequired(false))
+        .addChannelOption((option) =>
+          option.setName("log-channel").setDescription("Log channel").addChannelTypes(ChannelType.GuildText).setRequired(false),
+        )
+        .addChannelOption((option) =>
+          option
+            .setName("ticket-category")
+            .setDescription("Ticket channel category")
+            .addChannelTypes(ChannelType.GuildCategory)
+            .setRequired(false),
+        ),
+    );
+  }
 
-    public override registerApplicationCommands(registry: Subcommand.Registry) {
-        registry.registerChatInputCommand(builder => {
-            builder.setName("update").setDescription("update role and log channel of the guild").setDefaultMemberPermissions(PermissionsBitField.resolve("ManageGuild"))
-                .addSubcommandGroup((group) =>
-                    group
-                        .setName('update-settings')
-                        .setDescription('Update the settings for the guild')
-                        .addSubcommand((command) =>
-                            command
-                                .setName('update-support-role')
-                                .setDescription('Updates the support role of the guild')
-                                .addRoleOption((options) =>
-                                    options
-                                        .setName('support-role')
-                                        .setDescription('update the support role')
-                                        .setRequired(true)
-                                )
-                        )
-                        .addSubcommand((command) =>
-                            command
-                                .setName('update-log-channel')
-                                .setDescription('Updates the log channel of the guild')
-                                .addChannelOption((options) =>
-                                    options
-                                        .setName('log-channel')
-                                        .setDescription('update the log channel')
-                                        .setRequired(true)
-                                )
-                        )
-                )
-        })
-    }
+  public async chatInputRun(interaction: ChatInputCommand.Interaction) {
+    const supportRole = interaction.options.getRole("support-role");
+    const logChannel = interaction.options.getChannel("log-channel");
+    const ticketCategory = interaction.options.getChannel("ticket-category");
 
-    public async updateRole(interaction: Subcommand.ChatInputCommandInteraction) {
-      const guildDb = await prisma.guild.findFirst({
-            where: {
-                guildId: interaction.guildId!
-            }
-        })
-        const membersWithRole =  interaction.guild.members.cache.filter(x => x.roles.cache.has(interaction.options.getRole('support-role', true).id))
+    await prisma.guildConfig.update({
+      where: { guildId: interaction.guildId! },
+      data: {
+        supportRoleId: supportRole?.id,
+        logChannelId: logChannel?.id,
+        ticketCategoryId: ticketCategory?.id,
+      },
+    });
 
-        if (!guildDb) return interaction.reply({content: 'This guild has not been set up yet \n Please use /setup to get started!', ephemeral: true})
-        console.log(membersWithRole.map(x => x.user.id))
-        await prisma.guild.update({
-            where: {
-                guildId: interaction.guildId
-            },
-            data: {
-                supportRoleId: {
-                    set: interaction.options.getRole('support-role', true).id
-                },
-                staff: {
-                    set: membersWithRole.map(x => x.user.id)
-                }
-            }
-        })
-
-        return await interaction.reply({content: `Successfully updated the support role of the guild to ${interaction.options.getRole('support-role', true)}`, ephemeral: true})
-    }
-
-    public async updateLogChannel(interaction: Subcommand.ChatInputCommandInteraction) {
-        const guildDb = await prisma.guild.findFirst({
-        where: {
-            guildId: interaction.guildId!
-        }
-    })
-
-        if (!guildDb) return interaction.reply({content: 'This guild has not been set up yet \n Please use /setup to get started!', ephemeral: true})
-            const channelId = interaction.options.getChannel('log-channel', true).id
-            const channel = interaction.guild.channels.cache.get(channelId)
-            await channel.edit({
-                permissionOverwrites: [
-                    {id: client.user.id, allow: ["SendMessages", "EmbedLinks", "ViewChannel"]}
-                ]
-            }).catch(async (e) => await interaction.reply({content: 'Error: Bot does not have enough permissions to update the log channel \n Please revise the permissions and try again!', ephemeral: true }))
-
-            await prisma.guild.update({
-            where: {
-                guildId: interaction.guildId!
-            },
-            data: {
-                logChannelId: channelId
-            }
-        })
-
-        return await interaction.reply({content: `Successfully updated the log channel of the guild to: <#${interaction.options.getChannel('log-channel', true).id}>`, ephemeral: true})
-    }
+    await interaction.reply({ content: "Settings updated.", ephemeral: true });
+  }
 }

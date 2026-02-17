@@ -1,143 +1,60 @@
-import {InteractionHandler, InteractionHandlerTypes} from "@sapphire/framework";
-import {
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonInteraction,
-    EmbedBuilder, PermissionsBitField,
-    StringSelectMenuInteraction
-} from "discord.js";
-import {prisma} from "../../../src/lib/prisma";
-import {client} from "../../bot";
+import { InteractionHandler, InteractionHandlerTypes } from "@sapphire/framework";
+import { ButtonInteraction } from "discord.js";
+import { prisma } from "../../../src/lib/prisma";
+import { createTicketChannel, ensureGuildConfig, ensureUser, ticketButtons, ticketCreatedEmbed } from "../../lib/ticket-utils";
+
+const createCooldown = new Map<string, number>();
 
 export default class CreateTicketHandler extends InteractionHandler {
-    public constructor(ctx: InteractionHandler.LoaderContext, options: InteractionHandler.Options) {
-        super(ctx, {
-            ...options,
-            interactionHandlerType: InteractionHandlerTypes.MessageComponent
-        });
+  public constructor(ctx: InteractionHandler.LoaderContext, options: InteractionHandler.Options) {
+    super(ctx, { ...options, interactionHandlerType: InteractionHandlerTypes.MessageComponent });
+  }
+
+  public override parse(interaction: ButtonInteraction) {
+    return interaction.customId === "create-ticket" ? this.some() : this.none();
+  }
+
+  public async run(interaction: ButtonInteraction) {
+    const cooldownKey = `${interaction.guildId}:${interaction.user.id}`;
+    const now = Date.now();
+    const cooldownEnd = createCooldown.get(cooldownKey) ?? 0;
+    if (cooldownEnd > now) {
+      const wait = Math.ceil((cooldownEnd - now) / 1000);
+      return interaction.reply({ content: `Please wait ${wait}s before opening another ticket.`, ephemeral: true });
     }
 
-    public override parse(interaction: ButtonInteraction | StringSelectMenuInteraction) {
-        if (interaction.customId !== "create-ticket") return  this.none()
+    createCooldown.set(cooldownKey, now + 10_000);
+    await interaction.deferReply({ ephemeral: true });
 
-       return this.some()
+    const config = await ensureGuildConfig(interaction.guild!);
+    if (!config) return interaction.editReply("Guild is not configured. Run /setup first.");
+
+    const existing = await prisma.ticket.findFirst({
+      where: { guildId: interaction.guildId!, openerId: interaction.user.id, status: { in: ["OPEN", "CLAIMED"] } },
+    });
+
+    if (existing) {
+      return interaction.editReply(`You already have an open ticket: <#${existing.channelId}>`);
     }
 
-    public  async run(interaction: ButtonInteraction | StringSelectMenuInteraction) {
-        const date = new Date();
-        const GuildDB = await prisma.ticketCategory.findFirst({
-            where: {
-                guild: {
-                    guildId: interaction.guildId
-                }
-            },
-            select: {
-                categoryId: true,
-                channelId: true,
-                guild: {
-                    select: {
-                        supportRoleId: true,
-                        logChannelId: true
-                    }
-                }
-            }
-        })
-        const findOpenTicket = await prisma.ticket.findFirst({
-            where: {
-                guild: {
-                    guildId: interaction.guildId
-                },
-                creator: {
-                    userId: interaction.user.id
-                },
-                isOpen: true
-            },
-            select: {
-                channelId: true,
+    await ensureUser(interaction.user.id, interaction.user.username);
+    const channel = await createTicketChannel(interaction.guild!, interaction.user, config.supportRoleId, config.ticketCategoryId);
 
-            }
-        })
-        const findRole = await interaction.guild.roles.fetch(GuildDB.guild.supportRoleId)
-        const findChannel = await interaction.guild.channels.fetch(GuildDB.guild.logChannelId)
+    const ticket = await prisma.ticket.create({
+      data: {
+        guildId: interaction.guildId!,
+        channelId: channel.id,
+        openerId: interaction.user.id,
+        status: "OPEN",
+      },
+    });
 
-        if (!findRole) return interaction.reply({content: 'Unable to find support role please run: \n `/update-settings support-role`'})
-        if (!findChannel) return interaction.reply({content: 'Unable to find log channel please run: \n `/update-settings log-channel`'})
-        if(findOpenTicket) {
-            return interaction.reply({ephemeral: true, content: `You already have an open ticket <#${findOpenTicket.channelId}>`})
-        }
-        const ticketChannel =  await interaction.guild.channels.create({
-            parent: GuildDB.categoryId,
-            name: `${interaction.user.username}-ticket`,
-            permissionOverwrites: [
-                {id: interaction.guild.roles.everyone.id, deny: PermissionsBitField.resolve('ViewChannel')},
-                {id: interaction.user.id, allow: PermissionsBitField.resolve(['ViewChannel', 'SendMessages', 'ReadMessageHistory'])},
-                {id: GuildDB.guild.supportRoleId, allow: PermissionsBitField.resolve(['ViewChannel', 'SendMessages', 'ReadMessageHistory'])},
-                {id: client.user.id, allow: PermissionsBitField.resolve(['ViewChannel', 'SendMessages', 'ReadMessageHistory', "EmbedLinks", "AddReactions"])}
+    await channel.send({
+      content: `${interaction.user} welcome! <@&${config.supportRoleId}>`,
+      embeds: [ticketCreatedEmbed(interaction.user)],
+      components: [ticketButtons()],
+    });
 
-            ]
-        })
-        const findUser = await prisma.user.findFirst({
-            where: {
-                userId: interaction.user.id
-            }
-        })
-        if(!findUser) {
-
-            await prisma.user.create({
-                data: {
-                    userId: interaction.user.id,
-
-                    Tickets: {
-                        create: {
-                            guild: {
-                                connect: {
-                                    guildId: interaction.guildId
-                                }
-                            },
-                            channelId: ticketChannel.id,
-                            createdAt: Math.round(Date.now() / 1000).toString(),
-                            isOpen: true
-                        }
-                    },
-
-                }
-            })
-        } else {
-            await prisma.ticket.create({
-                data: {
-                    createdAt: Math.round(Date.now() / 1000).toString(),
-                    guild: {
-                        connect: {
-                            guildId: interaction.guildId!
-                        }
-                    },
-                    creator: {
-                        connect: {
-                            userId: interaction.user.id
-                        }
-                    },
-                    isOpen: true,
-                    channelId: ticketChannel.id
-                }
-            })
-        }
-
-        const embed = new EmbedBuilder()
-            .setTitle(`${interaction.user.username}'s Ticket`)
-            .setThumbnail(interaction.user.avatarURL())
-            .setDescription('Please describe your issue in a detailed manner')
-            .setTimestamp()
-        const buttons = new ActionRowBuilder<ButtonBuilder>()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId("delete-ticket")
-                    .setLabel("Close Ticket")
-                    .setStyle(4)
-                    .setEmoji("❌")
-            )
-        await interaction.reply({content: `Successfully created a ticket at <#${ticketChannel.id}>`, ephemeral: true})
-
-        await ticketChannel.send({content: `<@${interaction.user.id}>, <@&${GuildDB.guild.supportRoleId}>`,embeds: [embed], components: [buttons]})
-
-    }
+    await interaction.editReply(`Ticket created: <#${ticket.channelId}>`);
+  }
 }

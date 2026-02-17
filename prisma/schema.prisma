@@ -1,64 +1,84 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
-  engineType = "library"
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
-model Guild {
-  id             String          @id @default(uuid()) @db.Uuid
-  guildId        String          @unique
-  supportRoleId  String          @unique
-  logChannelId   String          @unique
-  TicketCategory TicketCategory?
-  staff          String[]
-  tickets        Ticket[]
+enum TicketStatus {
+  OPEN
+  CLAIMED
+  CLOSED
 }
 
-model TicketCategory {
-  id         String @id @unique @default(uuid())
-  guildId    String @unique
-  channelId  String @unique
-  categoryId String @unique
-  guild      Guild  @relation(fields: [guildId], references: [guildId])
+model GuildConfig {
+  id                  String       @id @default(cuid())
+  guildId             String       @unique
+  supportRoleId       String
+  logChannelId        String?
+  ticketCategoryId    String?
+  panelChannelId      String?
+  transcriptRetention Int          @default(30)
+  ticketTypes         TicketType[]
+  tickets             Ticket[]
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@index([guildId])
+}
+
+model TicketType {
+  id          String      @id @default(cuid())
+  guildId     String
+  name        String
+  description String?
+  emoji       String?
+  guild       GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@unique([guildId, name])
 }
 
 model User {
-  id      String   @id @default(uuid()) @db.Uuid
-  userId  String   @unique
-  Tickets Ticket[]
+  id        String   @id @default(cuid())
+  discordId String   @unique
+  username  String?
+  tickets   Ticket[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Ticket {
-  id            String     @id @default(uuid())
-  createdAt     String
-  creatorId     String     @db.Uuid
-  guildId       String     @db.Uuid
-  channelId     String     @unique
-  isOpen        Boolean    @default(false)
-  messages      Messages[]
-  guild         Guild      @relation(fields: [guildId], references: [id])
-  creator       User       @relation(fields: [creatorId], references: [id])
-  transcriptUrl String?
+  id             String       @id @default(cuid())
+  guildId        String
+  channelId      String       @unique
+  openerId       String
+  type           String?
+  status         TicketStatus @default(OPEN)
+  claimedById    String?
+  closeReason    String?
+  transcriptPath String?
+  createdAt      DateTime     @default(now())
+  closedAt       DateTime?
+  updatedAt      DateTime     @updatedAt
+  guild          GuildConfig  @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  opener         User         @relation(fields: [openerId], references: [discordId], onDelete: Cascade)
+  messages       TicketMessage[]
+
+  @@index([guildId, status, createdAt])
+  @@index([openerId, status])
 }
 
-model Messages {
-  id             Int    @id @default(autoincrement())
-  ticketId       String
-  ticket         Ticket @relation(fields: [ticketId], references: [id])
-  authorId       String
-  timestamp      String
-  authorUsername String
-  message        String
-  authorIcon     String
+model TicketMessage {
+  id         String   @id @default(cuid())
+  ticketId   String
+  authorId   String
+  authorName String
+  authorIcon String?
+  content    String
+  createdAt  DateTime @default(now())
+  ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
 }

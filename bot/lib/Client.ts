@@ -1,18 +1,25 @@
-import {join} from 'path'
-import {SapphireClient} from "@sapphire/framework";
+import { SapphireClient } from "@sapphire/framework";
+import { GatewayIntentBits, Partials } from "discord.js";
+import { join } from "node:path";
+import { logger } from "./logger";
 
-export default class TickettrClient extends SapphireClient  {
+export default class TickettrClient extends SapphireClient {
+  public constructor() {
+    super({
+      intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.MessageContent,
+      ],
+      partials: [Partials.Channel, Partials.Message],
+      baseUserDirectory: join(process.cwd(), "dist", "bot"),
+      loadMessageCommandListeners: true,
+      logger: { instance: logger as never },
+    });
+  }
 
-    constructor() {
-        super({
-            intents: ["MessageContent", "Guilds", "GuildMessages", "GuildMembers", "GuildPresences"],
-            baseUserDirectory: join(process.cwd(), "dist", "bot")
-        });
-    }
-
-
-    public run() {
-        this.login(process.env.TOKEN);
-    }
-
- }
+  public run() {
+    return this.login(process.env.TOKEN);
+  }
+}
