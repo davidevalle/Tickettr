@@ -1,6 +1,16 @@
+import * as dotenv from "dotenv";
 import TickettrClient from "./lib/Client";
-import * as dotenv from 'dotenv';
-dotenv.config()
-export const client = new TickettrClient();
+import { logger } from "./lib/logger";
 
-client.run();
+dotenv.config();
+
+if (!process.env.TOKEN) {
+  logger.error("Missing TOKEN env var.");
+  process.exit(1);
+}
+
+export const client = new TickettrClient();
+client.run().catch((error) => {
+  logger.error({ err: error }, "Bot failed to start");
+  process.exit(1);
+});

@@ -1,11 +1,5 @@
-import {PrivacyPage} from "@/components/privacy-page";
+import { PrivacyPage } from "@/components/privacy-page";
 
-export default function tos() {
-
-    return (
-        <>
-            <PrivacyPage/>
-        </>
-    )
-
+export default function Privacy() {
+  return <PrivacyPage />;
 }

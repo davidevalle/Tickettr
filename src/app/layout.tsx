@@ -1,36 +1,25 @@
-import React from "react";
-import {getServerSession, Session, unstable_getServerSession} from "next-auth";
-import AuthProvider from "../providers/authProvider";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { getServerSession } from "next-auth";
 import "./globals.css";
-import {handler} from "tailwindcss-animate";
+import AuthProvider from "@/providers/authProvider";
+import { authOptions } from "@/lib/auth";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-    title: "Tickettr",
-    description: "Best of the rest ticket bot!",
+  title: "Tickettr",
+  description: "Tickettr - Discord ticket management platform",
 };
 
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const session = await getServerSession(authOptions);
 
-export default async function RootLayout({
-                                       children,
-                                   }: {
-    children: React.ReactNode
-}) {
-    //@ts-ignore
-    const session = await getServerSession(handler)
-    return (
-        <html lang="en">
-        <body>
-
-        <main>
-            <AuthProvider session={session}>
-                {children}
-            </AuthProvider>
-        </main>
-        </body>
-        </html>
-    )
+  return (
+    <html lang="en">
+      <body className={inter.className}>
+        <AuthProvider session={session}>{children}</AuthProvider>
+      </body>
+    </html>
+  );
 }

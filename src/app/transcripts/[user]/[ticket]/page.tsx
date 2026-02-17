@@ -1,46 +1,18 @@
-import {prisma} from "@/lib/prisma";
-import {Button} from "@/components/ui/button";
-import {signOut} from "next-auth/react";
-import {Transcripts} from "@/components/transcripts";
+import { Transcripts } from "@/components/transcripts";
+import { prisma } from "@/lib/prisma";
 
+export default async function UserTranscript({ params }: { params: { ticket: string; user: string } }) {
+  const messages = await prisma.ticketMessage.findMany({
+    where: {
+      ticketId: params.ticket,
+      ticket: {
+        openerId: params.user,
+      },
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
 
-export default async function UserTranscript({params} : {params: {ticket: string, user: string} }) {
-
-    const getTicketTranscript = await prisma.messages.findMany({
-        where: {
-            ticket: {
-                id: params.ticket,
-                creator: {
-                    userId: params.user
-                }
-            },
-        },
-        select: {
-            message: true,
-            authorIcon: true,
-            authorUsername: true,
-            ticketId: true,
-            timestamp: true,
-            authorId: true,
-            ticket: {
-                select: {
-                    guild: {
-                        select: {
-                            staff: true
-                        }
-                    }
-                }
-            }
-        },
-        orderBy: {
-            id: 'desc'
-        }
-    })
-    return (
-        <>
-
-            <Transcripts getTicketTranscript={getTicketTranscript} />
-        </>
-    )
-
+  return <Transcripts messages={messages} />;
 }

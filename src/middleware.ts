@@ -1,44 +1,25 @@
-import {NextRequestWithAuth, withAuth} from "next-auth/middleware"
-import {prisma} from "@/lib/prisma";
-import {NextResponse} from "next/server";
+import { withAuth } from "next-auth/middleware";
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 
-export default withAuth(
-   async function middleware(req){
-       const url = req.nextUrl.pathname.split('/')
-       const userId = url[2]
-       const ticketId = url[3]
-       const authUser = req.nextauth.token.sub
+export default withAuth(async (req) => {
+  const [, , userId, ticketId] = req.nextUrl.pathname.split("/");
+  const authUser = req.nextauth.token?.sub;
 
-       const ticketData = await prisma.ticket.findFirst({
-           where: {
-               id: ticketId,
-               creator: {
-                   userId: userId
-               }
-           },
-           select: {
-               creator: {
-                   select: {
-                       userId: true
-                   }
-               },
-               guild: {
-                   select: {
-                       staff: true
-                   }
-               }
-           }
-       })
+  if (!authUser) {
+    return NextResponse.redirect(new URL("/auth/login", req.url));
+  }
 
-       console.log(!ticketData)
-       if (!ticketData || !ticketData?.creator.userId.startsWith(authUser) && !ticketData?.guild.staff.find(x => x === authUser)) {
-           return NextResponse.redirect(new URL('/404', req.url))
-       }
-       return NextResponse.next()
-   }
+  const ticket = await prisma.ticket.findFirst({
+    where: { id: ticketId, openerId: userId },
+    select: { openerId: true },
+  });
 
-)
+  if (!ticket || (ticket.openerId !== authUser && userId !== authUser)) {
+    return NextResponse.redirect(new URL("/404", req.url));
+  }
 
+  return NextResponse.next();
+});
 
-export const config = { matcher: ["/transcripts/:path*"] }
-
+export const config = { matcher: ["/transcripts/:path*"] };
